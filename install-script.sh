@@ -20,7 +20,7 @@ RAM="512"
 SWAP="512"
 CORES="1"
 BRIDGE="vmbr0"
-STORAGE="local-lxc"
+STORAGE=""
 TEMPLATE="ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
 PORT="3000"
 
@@ -56,6 +56,35 @@ get_next_ctid() {
     msg_info "Using CT ID: $CTID"
 }
 
+# Detect available storage for LXC containers
+detect_storage() {
+    msg_info "Detecting available storage..."
+    
+    # Try common storage names first
+    for storage_name in "local-lvm" "local" "local-lxc" "local-zfs"; do
+        if pvesm status | grep -q "^$storage_name "; then
+            # Check if it supports container templates
+            if pvesm list $storage_name &>/dev/null; then
+                STORAGE=$storage_name
+                msg_ok "Using storage: $STORAGE"
+                return 0
+            fi
+        fi
+    done
+    
+    # If no common storage found, get first available storage that supports containers
+    STORAGE=$(pvesm status | grep -E "dir|zfspool|lvmthin" | awk '{print $1}' | head -n1)
+    
+    if [ -z "$STORAGE" ]; then
+        msg_error "No suitable storage found. Please configure storage in Proxmox first."
+        msg_info "Available storages:"
+        pvesm status
+        exit 1
+    fi
+    
+    msg_ok "Using storage: $STORAGE"
+}
+
 # Interactive setup
 interactive_setup() {
     echo ""
@@ -82,6 +111,9 @@ interactive_setup() {
     read -p "Network bridge (default: $BRIDGE): " input_bridge
     BRIDGE=${input_bridge:-$BRIDGE}
     
+    read -p "Storage (default: $STORAGE): " input_storage
+    STORAGE=${input_storage:-$STORAGE}
+    
     read -p "Application port (default: $PORT): " input_port
     PORT=${input_port:-$PORT}
     
@@ -93,6 +125,7 @@ interactive_setup() {
     echo "  RAM: ${RAM}MB"
     echo "  Cores: $CORES"
     echo "  Bridge: $BRIDGE"
+    echo "  Storage: $STORAGE"
     echo "  Port: $PORT"
     echo ""
     
@@ -166,11 +199,11 @@ install_application() {
     pct exec $CTID -- bash -c "
         cd /opt/ping-monitor
         
-        # Download from GitHub (replace with your repo)
-        curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/network-ping-monitor/main/server.js -o server.js
-        curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/network-ping-monitor/main/package.json -o package.json
-        curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/network-ping-monitor/main/public/index.html -o public/index.html
-        curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/network-ping-monitor/main/public/app.js -o public/app.js
+        # Download from GitHub
+        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/server.js -o server.js
+        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/package.json -o package.json
+        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/public/index.html -o public/index.html
+        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/public/app.js -o public/app.js
         
         # Install npm packages
         npm install --silent
@@ -276,6 +309,7 @@ trap cleanup EXIT
 main() {
     check_proxmox
     get_next_ctid
+    detect_storage
     interactive_setup
     download_template
     create_container
