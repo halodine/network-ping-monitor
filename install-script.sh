@@ -98,7 +98,8 @@ detect_storage() {
         done < <(pvesm status)
     fi
     
-    # Now find storage for containers (prefer lvmthin, fallback to template storage)
+    # Now find storage for containers (prefer lvmthin, fallback to zfspool, then dir)
+    # First, try to find lvmthin storage (best for containers)
     while IFS= read -r storage_line; do
         # Skip header line
         [[ "$storage_line" =~ ^NAME ]] && continue
@@ -108,19 +109,53 @@ detect_storage() {
         
         # Prefer lvmthin for containers (more efficient)
         if [[ "$storage_type" == "lvmthin" ]]; then
-            if [[ "$storage_name" == "local-lvm" ]] || [[ "$storage_name" == "local-zfs" ]]; then
+            STORAGE=$storage_name
+            msg_ok "Using container storage: $STORAGE (type: $storage_type)"
+            msg_ok "Using template storage: $TEMPLATE_STORAGE"
+            return 0
+        fi
+    done < <(pvesm status)
+    
+    # If no lvmthin found, try zfspool (supports both templates and containers)
+    if [ -z "$STORAGE" ]; then
+        while IFS= read -r storage_line; do
+            # Skip header line
+            [[ "$storage_line" =~ ^NAME ]] && continue
+            
+            storage_name=$(echo "$storage_line" | awk '{print $1}')
+            storage_type=$(echo "$storage_line" | awk '{print $2}')
+            
+            # zfspool supports both templates and containers
+            if [[ "$storage_type" == "zfspool" ]] && [[ "$storage_name" != "$TEMPLATE_STORAGE" ]]; then
                 STORAGE=$storage_name
                 msg_ok "Using container storage: $STORAGE (type: $storage_type)"
                 msg_ok "Using template storage: $TEMPLATE_STORAGE"
                 return 0
             fi
-        fi
-    done < <(pvesm status)
+        done < <(pvesm status)
+    fi
     
-    # If no lvmthin found, use template storage for both
+    # If still no container storage found, check if template storage supports containers
+    # Some dir storage supports containers, but 'local' typically doesn't
+    # Try to use template storage, but warn if it might not work
     if [ -z "$STORAGE" ]; then
-        STORAGE=$TEMPLATE_STORAGE
-        msg_ok "Using storage: $STORAGE (for both templates and containers)"
+        # Check if template storage is zfspool (supports containers)
+        template_type=$(pvesm status | grep "^$TEMPLATE_STORAGE " | awk '{print $2}')
+        if [[ "$template_type" == "zfspool" ]]; then
+            STORAGE=$TEMPLATE_STORAGE
+            msg_ok "Using storage: $STORAGE (for both templates and containers)"
+        else
+            # For dir storage, we need to check if it supports containers
+            # Most 'local' dir storage doesn't support containers, so we should error
+            msg_error "No suitable container storage found."
+            msg_info "Found template storage: $TEMPLATE_STORAGE (type: $template_type)"
+            msg_info "But this storage type may not support container directories."
+            msg_info ""
+            msg_info "You need storage that supports containers (lvmthin, zfspool, or dir with container support)."
+            msg_info "Available storages:"
+            pvesm status
+            exit 1
+        fi
     fi
     
     if [ -z "$TEMPLATE_STORAGE" ]; then
