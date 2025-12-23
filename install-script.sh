@@ -60,29 +60,49 @@ get_next_ctid() {
 detect_storage() {
     msg_info "Detecting available storage..."
     
-    # Try common storage names first
-    for storage_name in "local-lvm" "local" "local-lxc" "local-zfs"; do
+    # Templates require directory-based storage (dir) or ZFS storage (zfspool)
+    # LVM thin (lvmthin) storage does NOT support templates
+    
+    # Try common storage names that typically support templates
+    for storage_name in "local" "local-lxc" "local-zfs"; do
         if pvesm status | grep -q "^$storage_name "; then
-            # Check if it supports container templates
-            if pvesm list $storage_name &>/dev/null; then
-                STORAGE=$storage_name
-                msg_ok "Using storage: $STORAGE"
-                return 0
+            # Verify it supports templates by checking storage type and template capability
+            storage_type=$(pvesm status | grep "^$storage_name " | awk '{print $2}')
+            if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
+                # Double-check by trying to access template storage
+                if pveam list $storage_name &>/dev/null 2>&1; then
+                    STORAGE=$storage_name
+                    msg_ok "Using storage: $STORAGE (type: $storage_type)"
+                    return 0
+                fi
             fi
         fi
     done
     
-    # If no common storage found, get first available storage that supports containers
-    STORAGE=$(pvesm status | grep -E "dir|zfspool|lvmthin" | awk '{print $1}' | head -n1)
+    # If no common storage found, search all storages for one that supports templates
+    while IFS= read -r storage_line; do
+        storage_name=$(echo "$storage_line" | awk '{print $1}')
+        storage_type=$(echo "$storage_line" | awk '{print $2}')
+        
+        # Only directory and ZFS storage types support templates
+        if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
+            if pveam list $storage_name &>/dev/null 2>&1; then
+                STORAGE=$storage_name
+                msg_ok "Using storage: $STORAGE (type: $storage_type)"
+                return 0
+            fi
+        fi
+    done < <(pvesm status | grep -v "^NAME")
     
     if [ -z "$STORAGE" ]; then
-        msg_error "No suitable storage found. Please configure storage in Proxmox first."
+        msg_error "No suitable storage found that supports templates."
+        msg_info "Templates require directory-based storage (dir) or ZFS storage (zfspool)."
+        msg_info "LVM thin storage (lvmthin) does not support templates."
+        msg_info ""
         msg_info "Available storages:"
         pvesm status
         exit 1
     fi
-    
-    msg_ok "Using storage: $STORAGE"
 }
 
 # Interactive setup
