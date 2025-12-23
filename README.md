@@ -1,4 +1,4 @@
-# Network Ping Monitor
+# Network Ping Monitor - Not Working Yet
 
 A real-time network monitoring tool that displays the ping status of up to 255 hosts per subnet in an intuitive 15×17 grid layout.
 
