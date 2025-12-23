@@ -323,18 +323,182 @@ install_application() {
     
     msg_info "Downloading application files..."
     
+    # Use a more robust approach - download the single file and extract/create needed files
     pct exec $CTID -- bash -c "
+        set -e
         cd /opt/ping-monitor
         
-        # Download from GitHub
-        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/server.js -o server.js
-        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/package.json -o package.json
-        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/public/index.html -o public/index.html
-        curl -sL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/public/app.js -o public/app.js
+        # Download the main file
+        if ! curl -fsSL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/ping-monitor-nodejs.js -o ping-monitor-nodejs.js; then
+            echo 'ERROR: Failed to download ping-monitor-nodejs.js' >&2
+            exit 1
+        fi
+        
+        # Extract server.js (everything before the package.json comment section, line 119)
+        head -n 118 ping-monitor-nodejs.js > server.js
+        
+        # Create package.json
+        cat > package.json << 'PKGEOF'
+{
+  \"name\": \"network-ping-monitor\",
+  \"version\": \"1.0.0\",
+  \"description\": \"Real-time network ping monitoring tool\",
+  \"main\": \"server.js\",
+  \"scripts\": {
+    \"start\": \"node server.js\"
+  },
+  \"dependencies\": {
+    \"express\": \"^4.18.2\",
+    \"ws\": \"^8.14.2\"
+  }
+}
+PKGEOF
+        
+        # Create public/index.html
+        cat > public/index.html << 'HTMLEOF'
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+  <title>Network Ping Monitor</title>
+  <script src=\"https://cdn.tailwindcss.com\"></script>
+  <style>
+    .grid-15 { display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); }
+  </style>
+</head>
+<body class=\"bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 min-h-screen\">
+  <div id=\"app\" class=\"p-8\"></div>
+  <script src=\"app.js\"></script>
+</body>
+</html>
+HTMLEOF
+        
+        # Extract app.js from the comments (lines 168-390, skip first and last line which are /* and */)
+        sed -n '168,390p' ping-monitor-nodejs.js | sed '1s|^/\*||' | sed '$s|\*/$||' > public/app.js 2>/dev/null || {
+            echo 'WARNING: Could not extract app.js from comments, creating basic version' >&2
+            # Fallback: create a basic working version
+            cat > public/app.js << 'APPEOF'
+let ws = null;
+let networks = [];
+let scanning = false;
+
+function connectWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(\`\${protocol}//\${window.location.host}\`);
+  ws.onopen = () => console.log('Connected');
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === 'progress') updateProgress(data);
+    else if (data.type === 'complete') updateNetworkResults(data);
+  };
+  ws.onclose = () => setTimeout(connectWebSocket, 3000);
+}
+
+function loadNetworks() {
+  const saved = localStorage.getItem('networks');
+  networks = saved ? JSON.parse(saved) : [{ id: 1, base: '192.168.50', hosts: Array(255).fill(null).map(() => ({ online: false, latency: 0 })), lastScan: 'Never' }];
+}
+
+function saveNetworks() {
+  localStorage.setItem('networks', JSON.stringify(networks));
+}
+
+function updateProgress(data) {
+  const network = networks.find(n => n.base === data.baseIp);
+  if (network) {
+    data.results.forEach(result => {
+      network.hosts[result.index] = { online: result.online, latency: result.latency };
+    });
+    render();
+  }
+}
+
+function updateNetworkResults(data) {
+  const network = networks.find(n => n.base === data.baseIp);
+  if (network) {
+    data.results.forEach(result => {
+      network.hosts[result.index] = { online: result.online, latency: result.latency };
+    });
+    network.lastScan = new Date(data.timestamp).toLocaleTimeString();
+    saveNetworks();
+    scanning = false;
+    render();
+  }
+}
+
+function scanNetworks() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    alert('Not connected to server');
+    return;
+  }
+  scanning = true;
+  networks.forEach(n => n.lastScan = 'Scanning...');
+  render();
+  ws.send(JSON.stringify({ type: 'scan', networks: networks.map(n => ({ base: n.base })) }));
+}
+
+function addNetwork(base) {
+  if (!base.trim()) return;
+  networks.push({
+    id: Date.now(),
+    base: base,
+    hosts: Array(255).fill(null).map(() => ({ online: false, latency: 0 })),
+    lastScan: 'Never'
+  });
+  saveNetworks();
+  render();
+}
+
+function removeNetwork(id) {
+  networks = networks.filter(n => n.id !== id);
+  saveNetworks();
+  render();
+}
+
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = \`
+    <div class=\"max-w-7xl mx-auto\">
+      <h1 class=\"text-4xl font-bold text-white mb-8\">Network Ping Monitor</h1>
+      <div class=\"mb-6\">
+        <input type=\"text\" id=\"newNetwork\" placeholder=\"e.g., 192.168.1\" class=\"px-4 py-2 bg-slate-900 border border-slate-600 rounded text-white\" onkeypress=\"if(event.key==='Enter') addNetwork(document.getElementById('newNetwork').value); document.getElementById('newNetwork').value='';\">
+        <button onclick=\"addNetwork(document.getElementById('newNetwork').value); document.getElementById('newNetwork').value='';\" class=\"px-6 py-2 bg-green-600 text-white rounded ml-2\">Add Network</button>
+        <button onclick=\"scanNetworks()\" class=\"px-6 py-2 bg-blue-600 text-white rounded ml-2\" \${scanning ? 'disabled' : ''}>Scan Now</button>
+      </div>
+      \${networks.map(n => \`
+        <div class=\"bg-slate-800 rounded p-6 mb-4\">
+          <h2 class=\"text-2xl text-white mb-4\">\${n.base}.1-255</h2>
+          <div class=\"grid-15 gap-1\">
+            \${n.hosts.map((h, idx) => \`<div class=\"aspect-square rounded \${h.online ? 'bg-green-500 border-2 border-solid border-green-500' : 'bg-red-500/30 border-2 border-dashed border-red-500'}\" title=\"\${n.base}.\${idx+1}\${h.online ? ' - ' + h.latency + 'ms' : ''}\">\${idx+1}</div>\`).join('')}
+          </div>
+          <div class=\"mt-4 text-sm text-white\">
+            Online: \${n.hosts.filter(h => h.online).length} | Offline: \${n.hosts.filter(h => !h.online).length} | Last scan: \${n.lastScan}
+          </div>
+        </div>
+      \`).join('')}
+    </div>
+  \`;
+}
+
+loadNetworks();
+connectWebSocket();
+render();
+APPEOF
+        }
+        
+        # Clean up
+        rm -f ping-monitor-nodejs.js
         
         # Install npm packages
-        npm install --silent
-    "
+        if ! npm install --silent 2>&1; then
+            echo 'ERROR: Failed to install npm packages' >&2
+            exit 1
+        fi
+    " || {
+        msg_error "Failed to download or configure application files"
+        exit 1
+    }
     
     msg_ok "Application files installed"
 }
