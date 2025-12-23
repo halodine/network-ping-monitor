@@ -3,7 +3,7 @@
 
 A real-time network monitoring tool that displays the ping status of up to 255 hosts per subnet in an intuitive 15×17 grid layout.
 
-![Network Ping Monitor](https://via.placeholder.com/800x400?text=Add+Screenshot+Here)
+![Network Ping Monitor](https://raw.githubusercontent.com/halodine/network-ping-monitor/refs/heads/main/ScreenShot.png)
 
 ## Features
 
