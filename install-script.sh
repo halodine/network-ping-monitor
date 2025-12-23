@@ -21,6 +21,7 @@ SWAP="512"
 CORES="1"
 BRIDGE="vmbr0"
 STORAGE=""
+TEMPLATE_STORAGE=""
 TEMPLATE="ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
 PORT="3000"
 
@@ -56,14 +57,14 @@ get_next_ctid() {
     msg_info "Using CT ID: $CTID"
 }
 
-# Detect available storage for LXC containers
+# Detect available storage for templates and containers
 detect_storage() {
     msg_info "Detecting available storage..."
     
     # Templates require directory-based storage (dir) or ZFS storage (zfspool)
-    # LVM thin (lvmthin) storage does NOT support templates
+    # Containers can use lvmthin, dir, or zfspool (prefer lvmthin for efficiency)
     
-    # Get list of all storages and filter by type
+    # First, find storage for templates (must be dir or zfspool)
     while IFS= read -r storage_line; do
         # Skip header line
         [[ "$storage_line" =~ ^NAME ]] && continue
@@ -71,37 +72,60 @@ detect_storage() {
         storage_name=$(echo "$storage_line" | awk '{print $1}')
         storage_type=$(echo "$storage_line" | awk '{print $2}')
         
-        # Only consider dir or zfspool types (templates not supported on lvmthin)
+        # Templates need dir or zfspool
         if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
             # Prefer common storage names first
             if [[ "$storage_name" == "local" ]] || [[ "$storage_name" == "local-lxc" ]] || [[ "$storage_name" == "local-zfs" ]]; then
+                TEMPLATE_STORAGE=$storage_name
+                break
+            fi
+        fi
+    done < <(pvesm status)
+    
+    # If no preferred template storage found, use first available dir/zfspool
+    if [ -z "$TEMPLATE_STORAGE" ]; then
+        while IFS= read -r storage_line; do
+            # Skip header line
+            [[ "$storage_line" =~ ^NAME ]] && continue
+            
+            storage_name=$(echo "$storage_line" | awk '{print $1}')
+            storage_type=$(echo "$storage_line" | awk '{print $2}')
+            
+            if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
+                TEMPLATE_STORAGE=$storage_name
+                break
+            fi
+        done < <(pvesm status)
+    fi
+    
+    # Now find storage for containers (prefer lvmthin, fallback to template storage)
+    while IFS= read -r storage_line; do
+        # Skip header line
+        [[ "$storage_line" =~ ^NAME ]] && continue
+        
+        storage_name=$(echo "$storage_line" | awk '{print $1}')
+        storage_type=$(echo "$storage_line" | awk '{print $2}')
+        
+        # Prefer lvmthin for containers (more efficient)
+        if [[ "$storage_type" == "lvmthin" ]]; then
+            if [[ "$storage_name" == "local-lvm" ]] || [[ "$storage_name" == "local-zfs" ]]; then
                 STORAGE=$storage_name
-                msg_ok "Using storage: $STORAGE (type: $storage_type)"
+                msg_ok "Using container storage: $STORAGE (type: $storage_type)"
+                msg_ok "Using template storage: $TEMPLATE_STORAGE"
                 return 0
             fi
         fi
     done < <(pvesm status)
     
-    # If no preferred storage found, use first available dir/zfspool storage
-    while IFS= read -r storage_line; do
-        # Skip header line
-        [[ "$storage_line" =~ ^NAME ]] && continue
-        
-        storage_name=$(echo "$storage_line" | awk '{print $1}')
-        storage_type=$(echo "$storage_line" | awk '{print $2}')
-        
-        # Only use dir or zfspool types
-        if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
-            STORAGE=$storage_name
-            msg_ok "Using storage: $STORAGE (type: $storage_type)"
-            return 0
-        fi
-    done < <(pvesm status)
-    
+    # If no lvmthin found, use template storage for both
     if [ -z "$STORAGE" ]; then
+        STORAGE=$TEMPLATE_STORAGE
+        msg_ok "Using storage: $STORAGE (for both templates and containers)"
+    fi
+    
+    if [ -z "$TEMPLATE_STORAGE" ]; then
         msg_error "No suitable storage found that supports templates."
         msg_info "Templates require directory-based storage (dir) or ZFS storage (zfspool)."
-        msg_info "LVM thin storage (lvmthin) does not support templates."
         msg_info ""
         msg_info "Available storages:"
         pvesm status
@@ -135,8 +159,11 @@ interactive_setup() {
     read -p "Network bridge (default: $BRIDGE): " input_bridge
     BRIDGE=${input_bridge:-$BRIDGE}
     
-    read -p "Storage (default: $STORAGE): " input_storage
+    read -p "Container storage (default: $STORAGE): " input_storage
     STORAGE=${input_storage:-$STORAGE}
+    
+    read -p "Template storage (default: $TEMPLATE_STORAGE): " input_template_storage
+    TEMPLATE_STORAGE=${input_template_storage:-$TEMPLATE_STORAGE}
     
     read -p "Application port (default: $PORT): " input_port
     PORT=${input_port:-$PORT}
@@ -149,7 +176,8 @@ interactive_setup() {
     echo "  RAM: ${RAM}MB"
     echo "  Cores: $CORES"
     echo "  Bridge: $BRIDGE"
-    echo "  Storage: $STORAGE"
+    echo "  Container storage: $STORAGE"
+    echo "  Template storage: $TEMPLATE_STORAGE"
     echo "  Port: $PORT"
     echo ""
     
@@ -164,9 +192,9 @@ interactive_setup() {
 download_template() {
     msg_info "Checking for Ubuntu template..."
     
-    if ! pveam list $STORAGE | grep -q "$TEMPLATE"; then
+    if ! pveam list $TEMPLATE_STORAGE | grep -q "$TEMPLATE"; then
         msg_info "Downloading Ubuntu 22.04 template..."
-        pveam download $STORAGE $TEMPLATE
+        pveam download $TEMPLATE_STORAGE $TEMPLATE
         msg_ok "Template downloaded"
     else
         msg_ok "Template already exists"
@@ -177,7 +205,7 @@ download_template() {
 create_container() {
     msg_info "Creating LXC container..."
     
-    pct create $CTID $STORAGE:vztmpl/$TEMPLATE \
+    pct create $CTID $TEMPLATE_STORAGE:vztmpl/$TEMPLATE \
         --hostname $HOSTNAME \
         --memory $RAM \
         --swap $SWAP \
