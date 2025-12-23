@@ -63,36 +63,40 @@ detect_storage() {
     # Templates require directory-based storage (dir) or ZFS storage (zfspool)
     # LVM thin (lvmthin) storage does NOT support templates
     
-    # Try common storage names that typically support templates
-    for storage_name in "local" "local-lxc" "local-zfs"; do
-        if pvesm status | grep -q "^$storage_name "; then
-            # Verify it supports templates by checking storage type and template capability
-            storage_type=$(pvesm status | grep "^$storage_name " | awk '{print $2}')
-            if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
-                # Double-check by trying to access template storage
-                if pveam list $storage_name &>/dev/null 2>&1; then
-                    STORAGE=$storage_name
-                    msg_ok "Using storage: $STORAGE (type: $storage_type)"
-                    return 0
-                fi
-            fi
-        fi
-    done
-    
-    # If no common storage found, search all storages for one that supports templates
+    # Get list of all storages and filter by type
     while IFS= read -r storage_line; do
+        # Skip header line
+        [[ "$storage_line" =~ ^NAME ]] && continue
+        
         storage_name=$(echo "$storage_line" | awk '{print $1}')
         storage_type=$(echo "$storage_line" | awk '{print $2}')
         
-        # Only directory and ZFS storage types support templates
+        # Only consider dir or zfspool types (templates not supported on lvmthin)
         if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
-            if pveam list $storage_name &>/dev/null 2>&1; then
+            # Prefer common storage names first
+            if [[ "$storage_name" == "local" ]] || [[ "$storage_name" == "local-lxc" ]] || [[ "$storage_name" == "local-zfs" ]]; then
                 STORAGE=$storage_name
                 msg_ok "Using storage: $STORAGE (type: $storage_type)"
                 return 0
             fi
         fi
-    done < <(pvesm status | grep -v "^NAME")
+    done < <(pvesm status)
+    
+    # If no preferred storage found, use first available dir/zfspool storage
+    while IFS= read -r storage_line; do
+        # Skip header line
+        [[ "$storage_line" =~ ^NAME ]] && continue
+        
+        storage_name=$(echo "$storage_line" | awk '{print $1}')
+        storage_type=$(echo "$storage_line" | awk '{print $2}')
+        
+        # Only use dir or zfspool types
+        if [[ "$storage_type" == "dir" ]] || [[ "$storage_type" == "zfspool" ]]; then
+            STORAGE=$storage_name
+            msg_ok "Using storage: $STORAGE (type: $storage_type)"
+            return 0
+        fi
+    done < <(pvesm status)
     
     if [ -z "$STORAGE" ]; then
         msg_error "No suitable storage found that supports templates."
