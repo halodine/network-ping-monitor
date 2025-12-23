@@ -27,7 +27,7 @@ No copyright is claimed on any portion. Use freely.
 Run this single command on your Proxmox host:
 
 ```bash
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/YOUR_USERNAME/network-ping-monitor/main/install.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/halodine/network-ping-monitor/main/install.sh)"
 ```
 
 The script will:
@@ -48,7 +48,7 @@ The script will:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/network-ping-monitor.git
+git clone https://github.com/halodine/network-ping-monitor.git
 cd network-ping-monitor
 ```
 
