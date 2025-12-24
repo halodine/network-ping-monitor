@@ -1,0 +1,14 @@
+{
+  "name": "network-ping-monitor",
+  "version": "1.0.0",
+  "description": "Real-time network ping monitoring tool",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2"
+  }
+}
+
