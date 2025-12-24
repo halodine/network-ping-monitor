@@ -35,9 +35,7 @@ function loadNetworks() {
   if (saved) {
     networks = JSON.parse(saved);
   } else {
-    networks = [
-      { id: 1, base: '192.168.50', hosts: Array(255).fill(null).map(() => ({ online: false, latency: 0 })), lastScan: 'Never' }
-    ];
+    networks = [];
   }
 }
 
@@ -185,7 +183,7 @@ function render() {
                 <div class="relative group">
                   <div class="aspect-square rounded flex items-center justify-center transition-all text-xs font-mono ${
                     host.online
-                      ? 'bg-green-500 border-2 border-solid border-green-500 hover:bg-green-600 text-white'
+                      ? 'bg-green-600 border-2 border-solid border-green-500 hover:bg-green-700 text-white'
                       : 'bg-red-500/30 border-2 border-dashed border-red-500 hover:bg-red-500/40 text-white'
                   }">
                     ${idx + 1}
