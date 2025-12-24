@@ -306,9 +306,11 @@ install_application() {
     
     pct exec $CTID -- bash -c "
         export DEBIAN_FRONTEND=noninteractive
+        # Only update package lists, don't upgrade everything
         apt-get update -qq
-        apt-get upgrade -y -qq
-        apt-get install -y -qq curl iputils-ping
+        
+        # Install only what's needed: curl for downloads, iputils-ping for ping command
+        apt-get install -y -qq curl iputils-ping ca-certificates gnupg
         
         # Install Node.js
         curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -329,25 +331,21 @@ install_application() {
         cd /opt/ping-monitor
         
         # Download files directly
-        msg_info 'Downloading server.js...'
         if ! curl -fsSL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/server.js -o server.js; then
             echo 'ERROR: Failed to download server.js' >&2
             exit 1
         fi
         
-        msg_info 'Downloading package.json...'
         if ! curl -fsSL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/package.json -o package.json; then
             echo 'ERROR: Failed to download package.json' >&2
             exit 1
         fi
         
-        msg_info 'Downloading public/index.html...'
         if ! curl -fsSL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/public/index.html -o public/index.html; then
             echo 'ERROR: Failed to download index.html' >&2
             exit 1
         fi
         
-        msg_info 'Downloading public/app.js...'
         if ! curl -fsSL https://raw.githubusercontent.com/halodine/network-ping-monitor/main/public/app.js -o public/app.js; then
             echo 'ERROR: Failed to download app.js' >&2
             exit 1
