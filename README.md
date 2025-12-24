@@ -11,7 +11,7 @@ A real-time network monitoring tool that displays the ping status of up to 255 h
 - ♿ **Accessibility** - Solid borders for online, dashed for offline (colorblind-friendly)
 - 💾 **Persistent Storage** - Networks saved in browser localStorage
 - ⚡ **WebSocket Updates** - Live progress during scans
-- 🐳 **Lightweight** - Runs on minimal resources (512MB RAM)
+- 🐳 **Lightweight** - Runs on minimal resources (512MB RAM, 2GB disk)
 
 ## License
 
@@ -80,7 +80,7 @@ sudo systemctl start ping-monitor
 1. **Add a Network**: Enter a network prefix (e.g., `192.168.1`) and click "Add Network"
 2. **Scan**: Click "Scan Now" to ping all hosts on all configured networks
 3. **View Results**: 
-   - Green solid border = Online
+   - Dark green center with solid green border = Online
    - Red dashed border = Offline
    - Hover over any box to see IP and latency
 4. **Networks Persist**: Your configured networks are saved automatically
