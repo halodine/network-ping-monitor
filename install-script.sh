@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Default values
 CTID=""
 HOSTNAME="ping-monitor"
-DISK_SIZE="4"
+DISK_SIZE="2"
 RAM="512"
 SWAP="512"
 CORES="1"
