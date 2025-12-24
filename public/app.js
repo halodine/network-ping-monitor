@@ -181,11 +181,11 @@ function render() {
             <div class="grid-15 gap-1 mb-4">
               ${network.hosts.map((host, idx) => `
                 <div class="relative group">
-                  <div class="aspect-square rounded flex items-center justify-center transition-all text-xs font-mono ${
+                  <div class="aspect-square rounded flex items-center justify-center transition-all text-xs font-mono border-2 ${
                     host.online
-                      ? 'bg-green-600 border-2 border-solid border-green-500 hover:bg-green-700 text-white'
-                      : 'bg-red-500/30 border-2 border-dashed border-red-500 hover:bg-red-500/40 text-white'
-                  }">
+                      ? 'border-solid border-green-500 hover:opacity-90 text-white'
+                      : 'bg-red-500/30 border-dashed border-red-500 hover:bg-red-500/40 text-white'
+                  }" style="${host.online ? 'background-color: #325748;' : ''}">
                     ${idx + 1}
                   </div>
                   <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border border-slate-700 z-10">
